@@ -1,0 +1,12 @@
+node_modules
+# Keep environment variables out of version control
+.env
+/prisma/generated/*
+package-lock.json
+.vscode
+
+/uploads
+.idea/
+
+# Firebase / GCP service account
+*-firebase-adminsdk-*.json
