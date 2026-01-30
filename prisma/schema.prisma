@@ -37,6 +37,19 @@ model visitors {
   @@index([visitor_profile], map: "idx_visitor_profile")
 }
 
+model staff {
+  id           Int       @id @default(autoincrement()) @db.UnsignedInt
+  name         String    @db.VarChar(255)
+  phone_number String    @db.VarChar(20)
+  active       Boolean?  @default(true)
+  created_at   DateTime? @default(now()) @db.DateTime(0)
+  modified_at  DateTime? @default(now()) @db.DateTime(0)
+
+  @@index([active], map: "idx_active")
+  @@index([name], map: "idx_name")
+  @@index([phone_number], map: "idx_phone_number")
+}
+
 enum visitors_visitor_profile {
   Player
   Visitor
