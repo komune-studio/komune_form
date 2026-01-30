@@ -18,4 +18,7 @@ router.put('/:id', auth.auth, controller.updateVisitor);
 router.post('/:id/checkout', auth.auth, controller.checkOutVisitor);
 router.delete('/:id', auth.auth, controller.deleteVisitor);
 
+// Export route
+router.get('/export/csv', auth.auth, controller.exportVisitorsToCSV);
+
 export default router;

@@ -83,7 +83,8 @@ export async function getAllVisitors(req: Request, res: Response, next: NextFunc
             dateTo,
             visitorProfile,
             search,
-            timeRange // New parameter for time range filter
+            timeRange,
+            exportAll // New parameter for export
         } = req.query;
 
         const options: VisitorDAO.GetAllOptions = {};
@@ -153,7 +154,21 @@ export async function getAllVisitors(req: Request, res: Response, next: NextFunc
         }
 
         const visitors = await VisitorDAO.getAll(options);
-        res.send(visitors);
+        
+        // Jika exportAll = true, return data tanpa pagination
+        if (exportAll === 'true') {
+            res.send({
+                http_code: 200,
+                data: visitors,
+                message: 'All visitors data for export'
+            });
+        } else {
+            res.send({
+                http_code: 200,
+                data: visitors,
+                message: 'Visitors retrieved successfully'
+            });
+        }
     } catch (error: any) {
         next(new InternalServerError(error));
     }
@@ -417,6 +432,125 @@ export async function validateStaffName(req: Request, res: Response, next: NextF
                 phone_number: staff.phone_number
             }
         });
+    } catch (error: any) {
+        next(new InternalServerError(error));
+    }
+}
+
+// Function untuk export CSV
+export async function exportVisitorsToCSV(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
+    try {
+        const {
+            includeCheckedOut,
+            dateFrom,
+            dateTo,
+            visitorProfile,
+            search,
+            timeRange
+        } = req.query;
+
+        const options: VisitorDAO.GetAllOptions = {
+            includeCheckedOut: true // For export, include all data
+        };
+
+        // Handle time range filter
+        if (timeRange) {
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);
+
+            switch (timeRange) {
+                case 'today':
+                    const tomorrow = new Date(today);
+                    tomorrow.setDate(tomorrow.getDate() + 1);
+                    options.dateFrom = today;
+                    options.dateTo = tomorrow;
+                    break;
+                    
+                case 'last7days':
+                    const last7Days = new Date(today);
+                    last7Days.setDate(last7Days.getDate() - 7);
+                    options.dateFrom = last7Days;
+                    options.dateTo = new Date();
+                    break;
+                    
+                case 'last30days':
+                    const last30Days = new Date(today);
+                    last30Days.setDate(last30Days.getDate() - 30);
+                    options.dateFrom = last30Days;
+                    options.dateTo = new Date();
+                    break;
+                    
+                case 'custom':
+                    if (dateFrom) {
+                        options.dateFrom = new Date(dateFrom as string);
+                    }
+                    if (dateTo) {
+                        options.dateTo = new Date(dateTo as string);
+                    }
+                    break;
+            }
+        } else {
+            if (dateFrom) {
+                options.dateFrom = new Date(dateFrom as string);
+            }
+            if (dateTo) {
+                options.dateTo = new Date(dateTo as string);
+            }
+        }
+
+        if (visitorProfile && ['Player', 'Visitor', 'Other'].includes(visitorProfile as string)) {
+            options.visitorProfile = visitorProfile as Visitor['visitor_profile'];
+        }
+
+        if (search) {
+            options.search = search as string;
+        }
+
+        const visitors = await VisitorDAO.getAll(options);
+
+        // Set headers for CSV download
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', 'attachment; filename=visitors_export.csv');
+
+        // Create CSV content
+        const headers = [
+            'ID',
+            'Visitor Name',
+            'Phone Number',
+            'Profile',
+            'Profile Detail',
+            'Staff Name',
+            'Staff Phone',
+            'Check-in Date',
+            'Check-in Time',
+            'Check-out Date',
+            'Check-out Time',
+            'Status'
+        ];
+
+        // Write headers
+        let csvContent = headers.join(',') + '\n';
+
+        // Write data rows
+        visitors.forEach((visitor: any) => {
+            const row = [
+                visitor.id,
+                `"${visitor.visitor_name || ''}"`,
+                `"${visitor.phone_number || ''}"`,
+                `"${visitor.visitor_profile || ''}"`,
+                `"${visitor.visitor_profile_other || ''}"`,
+                `"${visitor.staff?.name || 'No Staff'}"`,
+                `"${visitor.staff?.phone_number || ''}"`,
+                visitor.created_at ? new Date(visitor.created_at).toISOString().split('T')[0] : '',
+                visitor.created_at ? new Date(visitor.created_at).toTimeString().split(' ')[0] : '',
+                visitor.checked_out_at ? new Date(visitor.checked_out_at).toISOString().split('T')[0] : '',
+                visitor.checked_out_at ? new Date(visitor.checked_out_at).toTimeString().split(' ')[0] : '',
+                visitor.checked_out_at ? 'Checked Out' : 'Active'
+            ];
+            csvContent += row.join(',') + '\n';
+        });
+
+        res.send(csvContent);
     } catch (error: any) {
         next(new InternalServerError(error));
     }
