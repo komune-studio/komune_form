@@ -7,7 +7,7 @@ import {
     MissingBodyError,
 } from '../errors/RequestErrorCollection';
 import * as VisitorDAO from '../daos/visitorDAO';
-import * as StaffDAO from '../daos/staffDAO'; // Tambahkan import staffDAO
+import * as StaffDAO from '../daos/staffDAO';
 import hidash from '../utils/hidash';
 import { visitors as Visitor } from '@prisma/client';
 
@@ -49,7 +49,11 @@ export async function createVisitor(req: Request, res: Response, next: NextFunct
         }
 
         const result = await VisitorDAO.create(VisitorDAO.formatCreate(body));
-        res.send(result);
+        res.send({
+            http_code: 200,
+            data: result,
+            message: 'Visitor created successfully'
+        });
     } catch (error: any) {
         next(new InternalServerError(error));
     }
@@ -69,7 +73,11 @@ export async function getVisitorById(req: Request, res: Response, next: NextFunc
             return;
         }
 
-        res.send(visitor);
+        res.send({
+            http_code: 200,
+            data: visitor,
+            message: 'Visitor retrieved successfully'
+        });
     } catch (error: any) {
         next(new InternalServerError(error));
     }
@@ -84,13 +92,23 @@ export async function getAllVisitors(req: Request, res: Response, next: NextFunc
             visitorProfile,
             search,
             timeRange,
-            exportAll // New parameter for export
+            limit,      // Tambahan: jumlah item per halaman
+            offset,     // Tambahan: skip berapa item
+            exportAll   // New parameter for export
         } = req.query;
 
         const options: VisitorDAO.GetAllOptions = {};
 
         if (includeCheckedOut !== undefined) {
             options.includeCheckedOut = includeCheckedOut === 'true';
+        }
+
+        // Pagination params
+        if (limit) {
+            options.limit = parseInt(limit as string);
+        }
+        if (offset) {
+            options.offset = parseInt(offset as string);
         }
 
         // Handle time range filter
@@ -153,22 +171,21 @@ export async function getAllVisitors(req: Request, res: Response, next: NextFunc
             options.search = search as string;
         }
 
+        // Jika exportAll = true, ambil semua tanpa pagination
+        if (exportAll === 'true') {
+            options.limit = undefined;
+            options.offset = undefined;
+        }
+
         const visitors = await VisitorDAO.getAll(options);
         
-        // Jika exportAll = true, return data tanpa pagination
-        if (exportAll === 'true') {
-            res.send({
-                http_code: 200,
-                data: visitors,
-                message: 'All visitors data for export'
-            });
-        } else {
-            res.send({
-                http_code: 200,
-                data: visitors,
-                message: 'Visitors retrieved successfully'
-            });
-        }
+        res.send({
+            http_code: 200,
+            data: visitors,
+            count: visitors.length,
+            message: exportAll === 'true' ? 'All visitors data for export' : 'Visitors retrieved successfully'
+        });
+        
     } catch (error: any) {
         next(new InternalServerError(error));
     }
@@ -221,7 +238,11 @@ export async function updateVisitor(req: Request, res: Response, next: NextFunct
         }
 
         const result = await VisitorDAO.update(id, body);
-        res.send(result);
+        res.send({
+            http_code: 200,
+            data: result,
+            message: 'Visitor updated successfully'
+        });
     } catch (error: any) {
         next(new InternalServerError(error));
     }
@@ -248,8 +269,9 @@ export async function checkOutVisitor(req: Request, res: Response, next: NextFun
 
         const result = await VisitorDAO.checkOut(id);
         res.send({ 
-            message: 'Visitor checked out successfully',
-            visitor: result 
+            http_code: 200,
+            data: result,
+            message: 'Visitor checked out successfully'
         });
     } catch (error: any) {
         next(new InternalServerError(error));
@@ -272,6 +294,7 @@ export async function deleteVisitor(req: Request, res: Response, next: NextFunct
 
         await VisitorDAO.deleteVisitor(id);
         res.send({ 
+            http_code: 200,
             message: 'Visitor deleted successfully'
         });
     } catch (error: any) {
@@ -334,7 +357,11 @@ export async function getVisitorStats(req: Request, res: Response, next: NextFun
         }
 
         const stats = await VisitorDAO.getStats(startDate, endDate);
-        res.send(stats);
+        res.send({
+            http_code: 200,
+            data: stats,
+            message: 'Stats retrieved successfully'
+        });
     } catch (error: any) {
         next(new InternalServerError(error));
     }
@@ -356,7 +383,11 @@ export async function getVisitorByPhone(req: Request, res: Response, next: NextF
             return;
         }
 
-        res.send(visitor);
+        res.send({
+            http_code: 200,
+            data: visitor,
+            message: 'Visitor retrieved successfully'
+        });
     } catch (error: any) {
         next(new InternalServerError(error));
     }
@@ -371,12 +402,14 @@ export async function searchVisitors(req: Request, res: Response, next: NextFunc
             return;
         }
 
-        const visitors = await VisitorDAO.getAll({
-            search: query as string,
-            includeCheckedOut: true
-        });
+        const visitors = await VisitorDAO.searchVisitors(query as string);
 
-        res.send(visitors);
+        res.send({
+            http_code: 200,
+            data: visitors,
+            count: visitors.length,
+            message: 'Search results retrieved'
+        });
     } catch (error: any) {
         next(new InternalServerError(error));
     }
@@ -388,23 +421,33 @@ export async function getRecentActiveVisitors(req: Request, res: Response, next:
         const visitors = await VisitorDAO.getRecentActiveVisitors(
             limit ? parseInt(limit as string) : 10
         );
-        res.send(visitors);
+        
+        res.send({
+            http_code: 200,
+            data: visitors,
+            count: visitors.length,
+            message: 'Recent active visitors retrieved'
+        });
     } catch (error: any) {
         next(new InternalServerError(error));
     }
 }
 
-// TAMBAHAN: Function untuk mendapatkan daftar staff untuk dropdown
+// Function untuk mendapatkan daftar staff untuk dropdown
 export async function getStaffForDropdown(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
     try {
         const staff = await StaffDAO.getActiveStaff();
-        res.send(staff);
+        res.send({
+            http_code: 200,
+            data: staff,
+            message: 'Staff list retrieved'
+        });
     } catch (error: any) {
         next(new InternalServerError(error));
     }
 }
 
-// TAMBAHAN: Validasi nama staff sebelum create/update visitor
+// Validasi nama staff
 export async function validateStaffName(req: Request, res: Response, next: NextFunction): Promise<void | Response> {
     try {
         const { name } = req.query;
@@ -418,6 +461,7 @@ export async function validateStaffName(req: Request, res: Response, next: NextF
         
         if (!staff) {
             res.send({ 
+                http_code: 200,
                 valid: false, 
                 message: `Staff "${name}" not found or inactive` 
             });
@@ -425,6 +469,7 @@ export async function validateStaffName(req: Request, res: Response, next: NextF
         }
 
         res.send({ 
+            http_code: 200,
             valid: true, 
             staff: {
                 id: staff.id,
@@ -512,7 +557,7 @@ export async function exportVisitorsToCSV(req: Request, res: Response, next: Nex
         res.setHeader('Content-Type', 'text/csv');
         res.setHeader('Content-Disposition', 'attachment; filename=visitors_export.csv');
 
-        // Create CSV content
+        // Create CSV content - sekarang udah rapi karena data flat
         const headers = [
             'ID',
             'Visitor Name',
@@ -539,13 +584,13 @@ export async function exportVisitorsToCSV(req: Request, res: Response, next: Nex
                 `"${visitor.phone_number || ''}"`,
                 `"${visitor.visitor_profile || ''}"`,
                 `"${visitor.visitor_profile_other || ''}"`,
-                `"${visitor.staff?.name || 'No Staff'}"`,
-                `"${visitor.staff?.phone_number || ''}"`,
-                visitor.created_at ? new Date(visitor.created_at).toISOString().split('T')[0] : '',
-                visitor.created_at ? new Date(visitor.created_at).toTimeString().split(' ')[0] : '',
-                visitor.checked_out_at ? new Date(visitor.checked_out_at).toISOString().split('T')[0] : '',
-                visitor.checked_out_at ? new Date(visitor.checked_out_at).toTimeString().split(' ')[0] : '',
-                visitor.checked_out_at ? 'Checked Out' : 'Active'
+                `"${visitor.staff_name || 'No Staff'}"`,  // Udah flat
+                `"${visitor.staff_phone || ''}"`,         // Udah flat
+                visitor.check_in_date || '',
+                visitor.check_in_time || '',
+                visitor.check_out_date || '',
+                visitor.check_out_time || '',
+                visitor.status || ''
             ];
             csvContent += row.join(',') + '\n';
         });

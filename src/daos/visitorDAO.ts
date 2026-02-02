@@ -30,6 +30,31 @@ export interface GetAllOptions {
     search?: string;
     staffId?: number;
     timeRange?: string;
+    limit?: number;        // Tambahan: buat pagination
+    offset?: number;       // Tambahan: buat pagination
+    selectFields?: string[]; // Tambahan: pilih field tertentu aja
+}
+
+// Format rapi buat tabel/grid display (flatten structure)
+export function formatVisitorForTable(visitor: any) {
+    if (!visitor) return null;
+    
+    return {
+        id: visitor.id,
+        visitor_name: visitor.visitor_name,
+        phone_number: visitor.phone_number,
+        visitor_profile: visitor.visitor_profile,
+        visitor_profile_other: visitor.visitor_profile_other,
+        status: visitor.checked_out_at ? 'Checked Out' : 'Active',
+        check_in_date: visitor.created_at ? new Date(visitor.created_at).toISOString().split('T')[0] : '',
+        check_in_time: visitor.created_at ? new Date(visitor.created_at).toTimeString().split(' ')[0] : '',
+        check_out_date: visitor.checked_out_at ? new Date(visitor.checked_out_at).toISOString().split('T')[0] : '',
+        check_out_time: visitor.checked_out_at ? new Date(visitor.checked_out_at).toTimeString().split(' ')[0] : '',
+        // Flatten staff data jadi column sendiri-sendiri
+        staff_name: visitor.staff?.name || '-',
+        staff_phone: visitor.staff?.phone_number || '-',
+        staff_id: visitor.staff_id
+    };
 }
 
 export interface VisitorStats {
@@ -73,21 +98,23 @@ export function formatCreate(data: any): Prisma.visitorsCreateInput {
 }
 
 export async function create(data: Prisma.visitorsCreateInput): Promise<any> {
-    return await model.create({ 
+    const result = await model.create({ 
         data,
         include: {
             staff: true
         }
     });
+    return formatVisitorForTable(result);
 }
 
 export async function getById(id: number): Promise<any | null> {
-    return await model.findUnique({ 
+    const result = await model.findUnique({ 
         where: { id },
         include: {
             staff: true
         }
     });
+    return formatVisitorForTable(result);
 }
 
 export async function getAll(options?: GetAllOptions): Promise<any[]> {
@@ -120,13 +147,31 @@ export async function getAll(options?: GetAllOptions): Promise<any[]> {
         where.checked_out_at = null;
     }
 
-    return await model.findMany({
+    // Build query options
+    const queryOptions: any = {
         where,
         include: {
             staff: true
         },
-        orderBy: { created_at: 'desc' }
-    });
+        // ORDERING FIX: ID descending (terbaru di atas)
+        orderBy: [
+            { id: 'desc' },  // Prioritas ID terbesar di atas
+            { created_at: 'desc' }
+        ]
+    };
+
+    // Pagination
+    if (options?.limit) {
+        queryOptions.take = options.limit;
+    }
+    if (options?.offset) {
+        queryOptions.skip = options.offset;
+    }
+
+    const results = await model.findMany(queryOptions);
+    
+    // Format rapi buat tabel
+    return results.map(formatVisitorForTable);
 }
 
 export async function update(id: number, data: UpdateVisitorData): Promise<any> {
@@ -140,17 +185,19 @@ export async function update(id: number, data: UpdateVisitorData): Promise<any> 
         updateData.staff = data.staff_id ? { connect: { id: data.staff_id } } : { disconnect: true };
     }
 
-    return await model.update({
+    const result = await model.update({
         where: { id },
         data: updateData,
         include: {
             staff: true
         }
     });
+    
+    return formatVisitorForTable(result);
 }
 
 export async function checkOut(id: number): Promise<any> {
-    return await model.update({
+    const result = await model.update({
         where: { id },
         data: {
             checked_out_at: new Date(),
@@ -160,6 +207,8 @@ export async function checkOut(id: number): Promise<any> {
             staff: true
         }
     });
+    
+    return formatVisitorForTable(result);
 }
 
 export async function deleteVisitor(id: number): Promise<any> {
@@ -172,13 +221,15 @@ export async function deleteVisitor(id: number): Promise<any> {
 }
 
 export async function getByPhoneNumber(phone_number: string): Promise<any | null> {
-    return await model.findFirst({ 
+    const result = await model.findFirst({ 
         where: { phone_number },
         include: {
             staff: true
         },
-        orderBy: { created_at: 'desc' }
+        orderBy: { id: 'desc' } // ID terbaru duluan
     });
+    
+    return formatVisitorForTable(result);
 }
 
 export async function getStats(dateFrom?: Date, dateTo?: Date): Promise<VisitorStats> {
@@ -219,7 +270,7 @@ export async function getStats(dateFrom?: Date, dateTo?: Date): Promise<VisitorS
             staff: true
         },
         take: 10,
-        orderBy: { created_at: 'desc' }
+        orderBy: { id: 'desc' } // ID terbaru duluan
     });
 
     return {
@@ -227,19 +278,21 @@ export async function getStats(dateFrom?: Date, dateTo?: Date): Promise<VisitorS
         visitorsByProfile,
         checkedOutCount,
         activeVisitors,
-        recentVisitors
+        recentVisitors: recentVisitors.map(formatVisitorForTable)
     };
 }
 
 export async function getRecentActiveVisitors(limit: number = 10): Promise<any[]> {
-    return await model.findMany({
+    const results = await model.findMany({
         where: { checked_out_at: null },
         include: {
             staff: true
         },
         take: limit,
-        orderBy: { created_at: 'desc' }
+        orderBy: { id: 'desc' } // ID terbaru duluan
     });
+    
+    return results.map(formatVisitorForTable);
 }
 
 export async function validateStaff(staffId: number): Promise<boolean> {
@@ -254,7 +307,7 @@ export async function validateStaff(staffId: number): Promise<boolean> {
 
 // Additional functions that might be needed
 export async function searchVisitors(searchTerm: string): Promise<any[]> {
-    return await model.findMany({
+    const results = await model.findMany({
         where: {
             OR: [
                 { visitor_name: { contains: searchTerm } },
@@ -265,13 +318,15 @@ export async function searchVisitors(searchTerm: string): Promise<any[]> {
         include: {
             staff: true
         },
-        orderBy: { created_at: 'desc' },
+        orderBy: { id: 'desc' }, // ID terbaru duluan
         take: 50
     });
+    
+    return results.map(formatVisitorForTable);
 }
 
 export async function getVisitorsByStaff(staffId: number): Promise<any[]> {
-    return await model.findMany({
+    const results = await model.findMany({
         where: {
             staff_id: staffId,
             checked_out_at: null
@@ -279,6 +334,8 @@ export async function getVisitorsByStaff(staffId: number): Promise<any[]> {
         include: {
             staff: true
         },
-        orderBy: { created_at: 'desc' }
+        orderBy: { id: 'desc' } // ID terbaru duluan
     });
+    
+    return results.map(formatVisitorForTable);
 }
